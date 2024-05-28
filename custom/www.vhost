@@ -1,0 +1,15 @@
+<VirtualHost *:8000>
+  ServerName https://www.aleph0.com
+  ServerAlias aleph0.com
+  UseCanonicalName On
+  DocumentRoot /home/chjones/www/www.aleph0.com
+  <Directory /home/chjones/www/www.aleph0.com>
+    Require all granted
+    AllowOverride FileInfo
+    Options +IncludesNoExec
+    AddOutputFilter INCLUDES shtml
+  </Directory>
+
+  # Remove the leading /chjones if present
+  Alias /chjones "/home/chjones/www/www.aleph0.com"
+</VirtualHost>
