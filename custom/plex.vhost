@@ -1,0 +1,103 @@
+<VirtualHost *:8000>
+  ServerName https://plex.aleph0.com
+  DocumentRoot "${APACHE_DOCUMENT_ROOT}"
+  UseCanonicalName On
+
+  # Enable Google OAuth authentication & authorization
+  <IfModule !auth_openidc_module>
+    LoadModule auth_openidc_module /home/chjones/software/apache2/modules/mod_auth_openidc.so
+  </IfModule>
+  OIDCProviderMetadataURL https://accounts.google.com/.well-known/openid-configuration
+  OIDCClientID 92135884505-iue0lacl73uajbudk65v9h3pap7eliuq.apps.googleusercontent.com
+  OIDCCryptoPassphrase "exec:/bin/sh -c 'grep OIDCCryptoPassphrase \"${APACHE_FOLDER}/secrets/secrets.conf\" | cut -d \" \" -f 2'"
+  OIDCClientSecret "exec:/bin/sh -c 'grep OIDCClientSecret \"${APACHE_FOLDER}/secrets/secrets.conf\" | cut -d \" \" -f 2'"
+  OIDCDefaultURL https://plex.aleph0.com/chjones/oauth/error
+  OIDCRedirectURI https://plex.aleph0.com/chjones/oauth/redirect
+  OIDCScope "openid https://www.googleapis.com/auth/userinfo.email"
+  OIDCAuthRequestParams "hd=aleph0.com"
+  # These settings ensure a login works for 2 weeks
+  OIDCSessionInactivityTimeout 1209600
+  OIDCSessionMaxDuration 1209600
+  # We don't need the details to be more insecure
+  OIDCPassClaimsAs none
+  # Allow sessions to persist post browser restart
+  OIDCSessionType server-cache:persistent
+  # Allow sessions to persist past server restart
+  OIDCCacheType file
+  OIDCCacheDir "${APACHE_FOLDER}/tmp/oauth"
+  OIDCXForwardedHeaders X-Forwarded-Proto X-Forwarded-Host
+  OIDCCookieDomain aleph0.com
+  OIDCCookieSameSite On
+  OIDCCookieHTTPOnly Off
+
+  # Specifically override this directory since it's defined in apache2.conf
+  <Directory "${APACHE_DOCUMENT_ROOT}">
+    AllowOverride None
+    Require all granted
+    # plex hostname (via cloudflare) adds /chjones/ to everything; this
+    # prevents accessing the 'root' directory
+    RedirectMatch 301 "^/([^/]*)$" "https://plex.aleph0.com/$1"
+  </Directory>
+  <Directory "/home/chjones/downloads">
+    Options +Indexes
+    # doesn't use index.html or similar files
+    DirectoryIndex disabled
+    AuthName "Aleph 0 Account Required"
+    AuthType openid-connect
+    Require claim hd:aleph0.com
+  </Directory>
+  # this makes plex.aleph0.com/chjones -> plex.aleph0.com/chjones/admin
+  <Directory "${APACHE_DOCUMENT_ROOT}/chjones">
+    RedirectMatch permanent "^/chjones(/?)$" "/chjones/admin/"
+  </Directory>
+  <Directory "${APACHE_DOCUMENT_ROOT}/chjones/admin/api">
+    AuthName "Aleph 0 Account Required"
+    AuthType openid-connect
+    Require claim hd:aleph0.com
+    Options +ExecCGI
+    AddHandler cgi-script .cgi
+    DirectoryIndex index.cgi
+    # Allow testing from localhost (i.e., a development machine loading the
+    # app from a local server but still accessing the scripts on this machine).
+    # This should be fine with the credentials requirement. Also still requires
+    # client (browser) to enable "allow third-party cookies".
+    Header always setifempty Access-Control-Allow-Origin "http://127.0.0.1:3000"
+    Header always setifempty Access-Control-Allow-Credentials "true"
+  </Directory>
+  <Directory "${APACHE_DOCUMENT_ROOT}/chjones/oauth">
+    AuthName "Aleph 0 Account Required"
+    AuthType openid-connect
+    Require claim hd:aleph0.com
+  </Directory>
+  <Directory "${APACHE_DOCUMENT_ROOT}/chjones/oauth/login">
+    Options +ExecCGI
+    DirectoryIndex index.cgi
+    AddHandler cgi-script .cgi
+  </Directory>
+  <Directory "${APACHE_DOCUMENT_ROOT}/chjones/rutorrent">
+    AuthName "Aleph 0 Account Required"
+    AuthType openid-connect
+    Require claim hd:aleph0.com
+  </Directory>
+  <Directory "${APACHE_DOCUMENT_ROOT}/chjones/rutorrent/share">
+    Require all denied
+  </Directory>
+  <Directory "${APACHE_DOCUMENT_ROOT}/chjones/rutorrent/conf">
+    Require all denied
+  </Directory>
+
+  <Location "/chjones/oauth/redirect">
+    <If "-n '%{QUERY_STRING}'">
+      # mod_oauth_openidc chokes on this url if a / is added to the end,
+      # so we get rid of the additional mangling done by mod_dir:
+      # but also need to handle the case when it's given as a bare url or
+      # invalid query (which currently returns 500); when given with / it just
+      # returns index.html, a login error page I made
+      DirectorySlash Off
+    </If>
+  </Location>
+
+  Alias /chjones/downloads /home/chjones/downloads
+  Alias /chjones/rtorrent "${APACHE_DOCUMENT_ROOT}/chjones/rutorrent"
+
+</VirtualHost>
