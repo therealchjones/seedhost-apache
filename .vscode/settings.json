@@ -1,3 +1,15 @@
 {
-	"cSpell.enabled": true
+	"cSpell.enabled": true,
+	"cSpell.words": [
+		"autoindex",
+		"compat",
+		"configtest",
+		"prefork",
+		"reqtimeout",
+		"scgi",
+		"setenvif",
+		"shmcb",
+		"socache",
+		"vhosts"
+	]
 }
