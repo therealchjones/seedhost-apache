@@ -1,7 +1,13 @@
 <VirtualHost *:8000>
   ServerName https://plex.aleph0.com
-  DocumentRoot "${APACHE_DOCUMENT_ROOT}"
+  DocumentRoot /home/chjones/www/plex.aleph0.com
   UseCanonicalName On
+
+  # Remove any leading /chjones
+  RewriteEngine on
+  # the [PT] flag ensures the substitution is treated as a URI and not filesystem
+  # and ensures other aliases work properly
+  RewriteRule "^/chjones($|/)(.*)$" "/$2" [PT]
 
   # Enable Google OAuth authentication & authorization
   <IfModule !auth_openidc_module>
@@ -11,7 +17,7 @@
   OIDCClientID 92135884505-iue0lacl73uajbudk65v9h3pap7eliuq.apps.googleusercontent.com
   OIDCCryptoPassphrase "exec:/bin/sh -c 'grep OIDCCryptoPassphrase \"${APACHE_FOLDER}/secrets/secrets.conf\" | cut -d \" \" -f 2'"
   OIDCClientSecret "exec:/bin/sh -c 'grep OIDCClientSecret \"${APACHE_FOLDER}/secrets/secrets.conf\" | cut -d \" \" -f 2'"
-  OIDCDefaultURL https://plex.aleph0.com/chjones/oauth/error
+  OIDCDefaultURL https://plex.aleph0.com/oauth/error
   OIDCRedirectURI https://plex.aleph0.com/chjones/oauth/redirect
   OIDCScope "openid https://www.googleapis.com/auth/userinfo.email"
   OIDCAuthRequestParams "hd=aleph0.com"
@@ -30,27 +36,11 @@
   OIDCCookieSameSite On
   OIDCCookieHTTPOnly Off
 
-  # Specifically override this directory since it's defined in apache2.conf
-  <Directory "${APACHE_DOCUMENT_ROOT}">
+  <Directory /home/chjones/www/plex.aleph0.com>
     AllowOverride None
     Require all granted
-    # plex hostname (via cloudflare) adds /chjones/ to everything; this
-    # prevents accessing the 'root' directory
-    RedirectMatch 301 "^/([^/]*)$" "https://plex.aleph0.com/$1"
   </Directory>
-  <Directory "/home/chjones/downloads">
-    Options +Indexes
-    # doesn't use index.html or similar files
-    DirectoryIndex disabled
-    AuthName "Aleph 0 Account Required"
-    AuthType openid-connect
-    Require claim hd:aleph0.com
-  </Directory>
-  # this makes plex.aleph0.com/chjones -> plex.aleph0.com/chjones/admin
-  <Directory "${APACHE_DOCUMENT_ROOT}/chjones">
-    RedirectMatch permanent "^/chjones(/?)$" "/chjones/admin/"
-  </Directory>
-  <Directory "${APACHE_DOCUMENT_ROOT}/chjones/admin/api">
+  <Directory "/home/chjones/www/plex.aleph0.com/api">
     AuthName "Aleph 0 Account Required"
     AuthType openid-connect
     Require claim hd:aleph0.com
@@ -64,16 +54,39 @@
     Header always setifempty Access-Control-Allow-Origin "http://127.0.0.1:3000"
     Header always setifempty Access-Control-Allow-Credentials "true"
   </Directory>
-  <Directory "${APACHE_DOCUMENT_ROOT}/chjones/oauth">
+  <Directory "/home/chjones/www/plex.aleph0.com/oauth">
     AuthName "Aleph 0 Account Required"
     AuthType openid-connect
     Require claim hd:aleph0.com
   </Directory>
-  <Directory "${APACHE_DOCUMENT_ROOT}/chjones/oauth/login">
+  <Directory "/home/chjones/www/plex.aleph0.com/oauth/login">
     Options +ExecCGI
     DirectoryIndex index.cgi
     AddHandler cgi-script .cgi
   </Directory>
+  <Directory "/home/chjones/www/plex.aleph0.com/oauth/redirect">
+    <If "-n '%{QUERY_STRING}'">
+      # mod_oauth_openidc chokes on this url if a / is added to the end,
+      # so we get rid of the additional mangling done by mod_dir:
+      # but also need to handle the case when it's given as a bare url or
+      # invalid query (which currently returns 500); when given with / it just
+      # returns index.html, a login error page I made
+      DirectorySlash Off
+    </If>
+  </Directory>
+
+  Alias /downloads /home/chjones/downloads
+  <Directory "/home/chjones/downloads">
+    Options +Indexes
+    # doesn't use index.html or similar files
+    DirectoryIndex disabled
+    AuthName "Aleph 0 Account Required"
+    AuthType openid-connect
+    Require claim hd:aleph0.com
+  </Directory>
+
+  Alias /rtorrent "${APACHE_DOCUMENT_ROOT}/chjones/rutorrent"
+  Alias /rutorrent "${APACHE_DOCUMENT_ROOT}/chjones/rutorrent"
   <Directory "${APACHE_DOCUMENT_ROOT}/chjones/rutorrent">
     AuthName "Aleph 0 Account Required"
     AuthType openid-connect
@@ -85,19 +98,5 @@
   <Directory "${APACHE_DOCUMENT_ROOT}/chjones/rutorrent/conf">
     Require all denied
   </Directory>
-
-  <Location "/chjones/oauth/redirect">
-    <If "-n '%{QUERY_STRING}'">
-      # mod_oauth_openidc chokes on this url if a / is added to the end,
-      # so we get rid of the additional mangling done by mod_dir:
-      # but also need to handle the case when it's given as a bare url or
-      # invalid query (which currently returns 500); when given with / it just
-      # returns index.html, a login error page I made
-      DirectorySlash Off
-    </If>
-  </Location>
-
-  Alias /chjones/downloads /home/chjones/downloads
-  Alias /chjones/rtorrent "${APACHE_DOCUMENT_ROOT}/chjones/rutorrent"
 
 </VirtualHost>
